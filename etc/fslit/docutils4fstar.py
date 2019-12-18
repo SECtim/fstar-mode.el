@@ -409,8 +409,9 @@ class FStarListingBaseDirective(Directive):
 
         # Sphinx highlights code when ``node.raw == node.astext()``. We don't
         # want highlighting here, so we use a dummy ``raw`` value
-        node = self.node_class("<no-highlighting>", code, classes=classes)
+        node = self.node_class("", code, classes=classes)
         node["tags"] = self.options.get("tags", "").split()
+        node["role"] = roles.code_role
         node.lines = lines
 
         self.add_name(node)

@@ -190,7 +190,8 @@ def fst2rst_linums(rawlines, marker): # type: Iterable[str] -> Iterable[Tuple[in
         if existing_header_indentation is None:
             if not prev_line_empty:
                 yield idx, "" # Empty line before ‘.. fst::’
-            yield idx, " " * rst_indentation + ".. fst::"
+            yield idx, " " * rst_indentation + ".. code-block:: fsharp"
+            yield idx, " " * rst_indentation + "   :force:"
             prev_line_empty = False
             existing_header_indentation = rst_indentation
         if not empty(lines[idx]) and not prev_line_empty:
