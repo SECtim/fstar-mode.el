@@ -397,9 +397,9 @@ This doesn't work for strings in snippets inside of comments."
   (with-syntax-table fstar--fqn-at-point-syntax-table
     (save-excursion
       (goto-char pos)
-      (-when-let* ((s (symbol-at-point)))
+      (-when-let* ((s (thing-at-point 'symbol t)))
         (replace-regexp-in-string ;; Drop final "." from e.g. A.B.(xy)
-         "\\.\\'" "" (substring-no-properties (symbol-name s)))))))
+         "\\.\\'" "" s)))))
 
 (defun fstar--propertize-title (title)
   "Format TITLE as a title."
@@ -865,8 +865,8 @@ allows composition in code comments."
 
 (defconst fstar-syntax-headers
   '("open" "module" "include" "friend"
-    "let" "let rec" "val" "and"
-    "exception" "effect" "new_effect" "sub_effect" "new_effect_for_free"
+    "let" "let rec" "val" "and" "assume"
+    "exception" "effect" "new_effect" "sub_effect" "new_effect_for_free" "layered_effect"
     "kind" "type" "class" "instance"))
 
 (defconst fstar-syntax-fsdoc-keywords
@@ -890,7 +890,7 @@ allows composition in code comments."
   "Regexp matching block headers.")
 
 (defconst fstar-syntax-block-start-re
-  (format "^\\(?:%s[ \n]\\)*%s "
+  (format "^\\(?:%s[ \n]\\)*\\(\\[@\\|%s \\)"
           (regexp-opt fstar-syntax-qualifiers)
           (regexp-opt (append (remove "and" fstar-syntax-headers)
                               fstar-syntax-preprocessor)))
@@ -1203,10 +1203,6 @@ leads to the binder's start."
       (flycheck-mode -1)
       (fstar-mode))))
 
-(defun fstar--cleanup-type (type)
-  "Clean up TYPE."
-  (replace-regexp-in-string "\\(?:uu___[0-9]*:\\|[@#][0-9]+\\_>\\)" "" type t t))
-
 (defun fstar--unparens (str)
   "Remove parentheses surrounding STR, if any."
   (if (and str
@@ -1227,7 +1223,7 @@ leads to the binder's start."
   (fstar--init-scratchpad)
   (with-current-buffer fstar--scratchpad
     (erase-buffer)
-    (insert (fstar--cleanup-type str))
+    (insert str)
     (fstar--font-lock-ensure)
     (buffer-string)))
 
@@ -1826,7 +1822,7 @@ Interactively, offer titles of F* wiki pages."
     ("info" . info)
     ("warning" . warning)
     ("error" . error)
-    ("severe" . eror)))
+    ("severe" . error)))
 
 (defun fstar-literate--parse-errors (output checker buffer)
   "Parse literate F* errors in OUTPUT.
@@ -2110,13 +2106,13 @@ Individual regions can be sent to F* in lax mode using
 (make-local-variable 'fstar-subp-sloppy)
 
 (defface fstar-subp-overlay-lax-face
-  '((t :slant italic))
+  '((t :slant italic :extend t))
   "Face used to highlight lax-checked sections of the buffer."
   :group 'fstar-interactive)
 
 (defface fstar-subp-overlay-pending-face
-  '((((background light)) :background "#AD7FA8")
-    (((background dark))  :background "#5C3566"))
+  '((((background light)) :background "#AD7FA8" :extend t)
+    (((background dark))  :background "#5C3566" :extend t))
   "Face used to highlight pending sections of the buffer."
   :group 'fstar-interactive)
 
@@ -2126,8 +2122,8 @@ Individual regions can be sent to F* in lax mode using
   :group 'fstar-interactive)
 
 (defface fstar-subp-overlay-busy-face
-  '((((background light)) :background "mistyrose")
-    (((background dark))  :background "mediumorchid"))
+  '((((background light)) :background "mistyrose" :extend t)
+    (((background dark))  :background "mediumorchid" :extend t))
   "Face used to highlight busy sections of the buffer."
   :group 'fstar-interactive)
 
@@ -2137,8 +2133,8 @@ Individual regions can be sent to F* in lax mode using
   :group 'fstar-interactive)
 
 (defface fstar-subp-overlay-processed-face
-  '((((background light)) :background "#EAF8FF")
-    (((background dark))  :background "darkslateblue"))
+  '((((background light)) :background "#EAF8FF" :extend t)
+    (((background dark))  :background "darkslateblue" :extend t))
   "Face used to highlight processed sections of the buffer."
   :group 'fstar-interactive)
 
@@ -2771,7 +2767,7 @@ potential errors.")
   (run-hook-with-args 'fstar-subp-overlay-processed-hook overlay status response))
 
 (cl-defstruct fstar-issue
-  level locs message)
+  level locs message number)
 
 (defun fstar-issue-alt-locs (issue)
   "Extract locations attached to ISSUE, except the first one."
@@ -2779,8 +2775,11 @@ potential errors.")
 
 (defun fstar-issue-message-with-level (issue)
   "Concatenate ISSUE's level and message."
-  (format "(%s) %s"
+  (format "(%s%s) %s"
           (capitalize (symbol-name (fstar-issue-level issue)))
+          (-if-let* ((num (fstar-issue-number issue)))
+             (concat " " (number-to-string num))
+             "")
           (fstar-issue-message issue)))
 
 (defconst fstar-subp-issue-location-regexp
@@ -2814,7 +2813,8 @@ potential errors.")
                                 :col-from (string-to-number col-from)
                                 :line-to (string-to-number line-to)
                                 :col-to (string-to-number col-to)))
-                      :message message)))
+                      :message message
+                      :number nil)))
 
 (defun fstar-subp-json--extract-alt-locs (message)
   "Extract secondary locations (see also, Also see) from MESSAGE.
@@ -2850,7 +2850,8 @@ Returns a pair of (CLEAN-MESSAGE . LOCATIONS)."
       (make-fstar-issue
        :level (intern .level)
        :locs (append (mapcar #'fstar-subp-json--parse-location .ranges) alt-locs)
-       :message (fstar--string-trim msg)))))
+       :message (fstar--string-trim msg)
+       :number .number))))
 
 (defun fstar-subp-parse-issues (response)
   "Parse RESPONSE into a list of issues."
@@ -4812,7 +4813,7 @@ Notifications are only displayed if it doesn't.")
 ;;; ;; ;; Tactics
 
 (cl-defstruct fstar-proof-state
-  label location goals smt-goals)
+  label location urgency goals smt-goals)
 
 (defconst fstar--goals-buffer-name "*fstar: goals*")
 (push fstar--goals-buffer-name fstar--all-temp-buffer-names)
@@ -5006,17 +5007,12 @@ This function exists to work around the fact that
         (current-buffer))))
 
 (defmacro fstar-tactics--with-goals-buffer (&rest body)
-  "Run BODY in F*'s goals buffer, then display that buffer."
+  "Run BODY in F*'s goals buffer"
   (declare (debug t)
            (indent 0))
   `(with-current-buffer (fstar-tactics--goals-buffer)
      (let ((inhibit-read-only t))
-       ,@body)
-     (set-marker help-window-point-marker (point))
-     (let ((window (temp-buffer-window-show (current-buffer))))
-       (help-window-setup window)
-       (with-selected-window window
-         (recenter 0)))))
+       ,@body)))
 
 (defun fstar-subp-json--parse-proof-state (json)
   "Convert JSON proof-state an fstar-mode proof state."
@@ -5024,6 +5020,7 @@ This function exists to work around the fact that
     (make-fstar-proof-state
      :label (if (equal .label "") nil .label)
      :location (and .location (fstar-subp-json--parse-location .location))
+     :urgency (or .urgency 1)
      :goals .goals
      :smt-goals .smt-goals)))
 
@@ -5035,7 +5032,13 @@ This function exists to work around the fact that
       (goto-char (point-max))
       (save-excursion
         (fstar-tactics--insert-proof-state ps))
-      (unless (bobp) (forward-line 2)))))
+      (unless (bobp) (forward-line 2))
+      (set-marker help-window-point-marker (point))
+      (if (> (fstar-proof-state-urgency ps) 0)
+          (let ((window (temp-buffer-window-show (current-buffer))))
+                (help-window-setup window)
+                (with-selected-window window
+                  (recenter 0)))))))
 
 ;;; ;; Starting the F* subprocess
 
@@ -5459,7 +5462,7 @@ This is useful to spot discrepancies between the CLI and IDE frontends."
          (dolist (type '(xpm png svg))
            (let* ((fname (format "%s.%S" img type))
                   (fpath (expand-file-name fname fstar-tool-bar--icons-directory)))
-             (push `(:type ,type :file ,fpath) specs)))
+             (push `(:type ,type :file ,fpath :scale 1.0) specs)))
          (setq props (plist-put props :image `(find-image '(,@specs))))))
      `(,key menu-item ,doc ,cmd . ,props))
     (_ binding)))
