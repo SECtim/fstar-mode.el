@@ -68,13 +68,13 @@ def add_html_assets(app):
     if app.builder.name == "html":
         app.config.html_static_path.append(docutils4fstar.ASSETS_PATH)
 
-        app.add_javascript("https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.36.0/codemirror.min.js")
+        app.add_js_file("https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.36.0/codemirror.min.js")
         app.add_stylesheet("https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.36.0/codemirror.min.css")
 
-        app.add_javascript("fstar.cm.js")
+        app.add_js_file("fstar.cm.js")
         app.add_stylesheet("cm.tango.css")
 
-        app.add_javascript("fslit.js")
+        app.add_js_file("fslit.js")
         app.add_stylesheet("fslit.css")
 
 def setup(app):
